@@ -15,10 +15,10 @@ import seaborn as sns
 import xarray as xr
 from patsy import build_design_matrices, dmatrices
 
-from causalpycustom.custom_exceptions import BadIndexException  # NOQA
-from causalpycustom.custom_exceptions import DataException, FormulaException
-from causalpycustom.plot_utils import plot_xY
-from causalpycustom.utils import _is_variable_dummy_coded, _series_has_2_levels
+from causalpy.custom_exceptions import BadIndexException  # NOQA
+from causalpy.custom_exceptions import DataException, FormulaException
+from causalpy.plot_utils import plot_xY
+from causalpy.utils import _is_variable_dummy_coded, _series_has_2_levels
 
 LEGEND_FONT_SIZE = 12
 az.style.use("arviz-darkgrid")
