@@ -1,3 +1,10 @@
+'''
+Significant changes have been made to this file 
+since the CausalPyCustom repository was forked from the
+CausalPy custom repository.
+
+'''
+
 from typing import Union
 
 import arviz as az
@@ -8,10 +15,10 @@ import seaborn as sns
 import xarray as xr
 from patsy import build_design_matrices, dmatrices
 
-from causalpy.custom_exceptions import BadIndexException  # NOQA
-from causalpy.custom_exceptions import DataException, FormulaException
-from causalpy.plot_utils import plot_xY
-from causalpy.utils import _is_variable_dummy_coded, _series_has_2_levels
+from causalpycustom.custom_exceptions import BadIndexException  # NOQA
+from causalpycustom.custom_exceptions import DataException, FormulaException
+from causalpycustom.plot_utils import plot_xY
+from causalpycustom.utils import _is_variable_dummy_coded, _series_has_2_levels
 
 LEGEND_FONT_SIZE = 12
 az.style.use("arviz-darkgrid")
@@ -59,6 +66,8 @@ class TimeSeriesExperiment(ExperimentalDesign):
     def __init__(
         self,
         data: pd.DataFrame,
+        outcome_variable_name: str,
+        variable_column: str,
         treatment_time: Union[int, float, pd.Timestamp],
         formula: str,
         model=None,
@@ -66,57 +75,103 @@ class TimeSeriesExperiment(ExperimentalDesign):
     ) -> None:
         super().__init__(model=model, **kwargs)
         self._input_validation(data, treatment_time)
-
+        self.variable_column = variable_column
+        self.outcome_variable_name = outcome_variable_name
         self.treatment_time = treatment_time
-        # split data in to pre and post intervention
-        self.datapre = data[data.index <= self.treatment_time]
-        self.datapost = data[data.index > self.treatment_time]
-
         self.formula = formula
 
-        # set things up with pre-intervention data
-        y, X = dmatrices(formula, self.datapre)
-        self.outcome_variable_name = y.design_info.column_names[0]
-        self._y_design_info = y.design_info
-        self._x_design_info = X.design_info
-        self.labels = X.design_info.column_names
-        self.pre_y, self.pre_X = np.asarray(y), np.asarray(X)
-        # process post-intervention data
-        (new_y, new_x) = build_design_matrices(
-            [self._y_design_info, self._x_design_info], self.datapost
-        )
-        self.post_X = np.asarray(new_x)
-        self.post_y = np.asarray(new_y)
+        self.datapre = {}
+        self.datapost = {}
+        self.pre_X = {}
+        self.pre_y = {}
+        self.post_X = {}
+        self.post_y = {}
 
+        for variable in np.append(
+            np.unique(data[self.variable_column]), "all_variables"
+        ):
+            # split data in to pre and post intervention
+            if variable == "all_variables":
+                self.datapre["all_variables"] = data[
+                    data.index <= self.treatment_time
+                ].drop([self.variable_column], axis=1)
+                self.datapost["all_variables"] = data[
+                    data.index > self.treatment_time
+                ].drop([self.variable_column], axis=1)
+            else:
+                self.datapre[variable] = data[
+                    (data.index <= self.treatment_time)
+                    & (data[self.variable_column] == variable)
+                ].drop([self.variable_column], axis=1)
+                self.datapost[variable] = data[
+                    (data.index > self.treatment_time)
+                    & (data[self.variable_column] == variable)
+                ].drop([self.variable_column], axis=1)
+
+            # set things up with pre-intervention data
+            y, X = dmatrices(formula, self.datapre[variable])
+
+            # set things up with pre-intervention data
+            _y_design_info = y.design_info
+            _x_design_info = X.design_info
+            self.pre_y[variable] = np.asarray(y)
+            self.pre_X[variable] = np.asarray(X)
+            # process post-intervention data
+            (new_y, new_x) = build_design_matrices(
+                [_y_design_info, _x_design_info], self.datapost[variable]
+            )
+            self.post_X[variable] = np.asarray(new_x)
+            self.post_y[variable] = np.asarray(new_y)
+
+        self.labels = X.design_info.column_names
         # DEVIATION FROM SKL EXPERIMENT CODE =============================
         # fit the model to the observed (pre-intervention) data
-        COORDS = {"coeffs": self.labels, "obs_indx": np.arange(self.pre_X.shape[0])}
-        self.model.fit(X=self.pre_X, y=self.pre_y, coords=COORDS)
+        COORDS = {
+            "coeffs": self.labels,
+            "obs_indx": np.arange(self.pre_X["all_variables"].shape[0]),
+        }
+        self.model.fit(
+            X=self.pre_X["all_variables"], y=self.pre_y["all_variables"], coords=COORDS
+        )
         # ================================================================
 
-        # score the goodness of fit to the pre-intervention data
-        self.score = self.model.score(X=self.pre_X, y=self.pre_y)
+        self.score = {}
+        self.pre_pred = {}
+        self.post_pred = {}
+        self.pre_impact = {}
+        self.post_impact = {}
+        self.post_impact_cumulative = {}
 
-        # get the model predictions of the observed (pre-intervention) data
-        self.pre_pred = self.model.predict(X=self.pre_X)
+        for variable in np.append(
+            np.unique(data[self.variable_column]), "all_variables"
+        ):
+            # score the goodness of fit to the pre-intervention data
+            self.score[variable] = self.model.score(
+                X=self.pre_X[variable], y=self.pre_y[variable]
+            )
 
-        # calculate the counterfactual
-        self.post_pred = self.model.predict(X=self.post_X)
+            # get the model predictions of the observed (pre-intervention) data
+            self.pre_pred[variable] = self.model.predict(X=self.pre_X[variable])
 
-        # causal impact pre (ie the residuals of the model fit to observed)
-        pre_data = xr.DataArray(self.pre_y[:, 0], dims=["obs_ind"])
-        self.pre_impact = (
-            pre_data - self.pre_pred["posterior_predictive"].mu
-        ).transpose(..., "obs_ind")
+            # calculate the counterfactual
+            self.post_pred[variable] = self.model.predict(X=self.post_X[variable])
 
-        # causal impact post (ie the residuals of the model fit to observed)
-        post_data = xr.DataArray(self.post_y[:, 0], dims=["obs_ind"])
-        self.post_impact = (
-            post_data - self.post_pred["posterior_predictive"].mu
-        ).transpose(..., "obs_ind")
+            # causal impact pre (ie the residuals of the model fit to observed)
+            pre_data = xr.DataArray(self.pre_y[variable][:, 0], dims=["obs_ind"])
+            self.pre_impact[variable] = (
+                pre_data - self.pre_pred[variable]["posterior_predictive"].mu
+            ).transpose(..., "obs_ind")
 
-        # cumulative impact post
-        self.post_impact_cumulative = self.post_impact.cumsum(dim="obs_ind")
+            # causal impact post (ie the residuals of the model fit to observed)
+            post_data = xr.DataArray(self.post_y[variable][:, 0], dims=["obs_ind"])
+            self.post_impact[variable] = (
+                post_data - self.post_pred[variable]["posterior_predictive"].mu
+            ).transpose(..., "obs_ind")
+
+            # cumulative impact post
+            self.post_impact_cumulative[variable] = self.post_impact[variable].cumsum(
+                dim="obs_ind"
+            )
 
     def _input_validation(self, data, treatment_time):
         """Validate the input data and model formula for correctness"""
@@ -133,44 +188,48 @@ class TimeSeriesExperiment(ExperimentalDesign):
                 "If data.index is not DatetimeIndex, treatment_time must be pd.Timestamp."  # noqa: E501
             )
 
-    def plot(self):
-
+    def plot(self, variable):
         """Plot the results"""
         fig, ax = plt.subplots(3, 1, sharex=True, figsize=(7, 8))
 
         # TOP PLOT --------------------------------------------------
         # pre-intervention period
         h_line, h_patch = plot_xY(
-            self.datapre.index,
-            self.pre_pred["posterior_predictive"].mu,
+            self.datapre[variable].index,
+            self.pre_pred[variable]["posterior_predictive"].mu,
             ax=ax[0],
             plot_hdi_kwargs={"color": "C0"},
         )
         handles = [(h_line, h_patch)]
         labels = ["Pre-intervention period"]
 
-        (h,) = ax[0].plot(self.datapre.index, self.pre_y, "k.", label="Observations")
+        (h,) = ax[0].plot(
+            self.datapre[variable].index,
+            self.pre_y[variable],
+            "k.",
+            label="Observations",
+        )
         handles.append(h)
         labels.append("Observations")
 
         # post intervention period
         h_line, h_patch = plot_xY(
-            self.datapost.index,
-            self.post_pred["posterior_predictive"].mu,
+            self.datapost[variable].index,
+            self.post_pred[variable]["posterior_predictive"].mu,
             ax=ax[0],
             plot_hdi_kwargs={"color": "C1"},
         )
         handles.append((h_line, h_patch))
         labels.append("Synthetic control")
 
-        ax[0].plot(self.datapost.index, self.post_y, "k.")
+        ax[0].plot(self.datapost[variable].index, self.post_y[variable], "k.")
         # Shaded causal effect
         h = ax[0].fill_between(
-            self.datapost.index,
+            self.datapost[variable].index,
             y1=az.extract(
-                self.post_pred, group="posterior_predictive", var_names="mu"
+                self.post_pred[variable], group="posterior_predictive", var_names="mu"
             ).mean("sample"),
-            y2=np.squeeze(self.post_y),
+            y2=np.squeeze(self.post_y[variable]),
             color="C0",
             alpha=0.25,
         )
@@ -179,28 +238,28 @@ class TimeSeriesExperiment(ExperimentalDesign):
 
         ax[0].set(
             title=f"""
-            Pre-intervention Bayesian $R^2$: {self.score.r2:.3f}
-            (std = {self.score.r2_std:.3f})
+            Pre-intervention Bayesian $R^2$: {self.score[variable].r2:.3f}
+            (std = {self.score[variable].r2_std:.3f})
             """
         )
 
         # MIDDLE PLOT -----------------------------------------------
         plot_xY(
-            self.datapre.index,
-            self.pre_impact,
+            self.datapre[variable].index,
+            self.pre_impact[variable],
             ax=ax[1],
             plot_hdi_kwargs={"color": "C0"},
         )
         plot_xY(
-            self.datapost.index,
-            self.post_impact,
+            self.datapost[variable].index,
+            self.post_impact[variable],
             ax=ax[1],
             plot_hdi_kwargs={"color": "C1"},
         )
         ax[1].axhline(y=0, c="k")
         ax[1].fill_between(
-            self.datapost.index,
-            y1=self.post_impact.mean(["chain", "draw"]),
+            self.datapost[variable].index,
+            y1=self.post_impact[variable].mean(["chain", "draw"]),
             color="C0",
             alpha=0.25,
             label="Causal impact",
@@ -210,8 +269,8 @@ class TimeSeriesExperiment(ExperimentalDesign):
         # BOTTOM PLOT -----------------------------------------------
         ax[2].set(title="Cumulative Causal Impact")
         plot_xY(
-            self.datapost.index,
-            self.post_impact_cumulative,
+            self.datapost[variable].index,
+            self.post_impact_cumulative[variable],
             ax=ax[2],
             plot_hdi_kwargs={"color": "C1"},
         )
@@ -248,14 +307,24 @@ class SyntheticControl(TimeSeriesExperiment):
 
     expt_type = "Synthetic Control"
 
-    def plot(self, plot_predictors=False):
+    def plot(self, variable, plot_predictors=False):
         """Plot the results"""
-        fig, ax = super().plot()
+        fig, ax = super().plot(variable)
         if plot_predictors:
             # plot control units as well
-            ax[0].plot(self.datapre.index, self.pre_X, "-", c=[0.8, 0.8, 0.8], zorder=1)
             ax[0].plot(
-                self.datapost.index, self.post_X, "-", c=[0.8, 0.8, 0.8], zorder=1
+                self.datapre[variable].index,
+                self.pre_X[variable],
+                "-",
+                c=[0.8, 0.8, 0.8],
+                zorder=1,
+            )
+            ax[0].plot(
+                self.datapost[variable].index,
+                self.post_X[variable],
+                "-",
+                c=[0.8, 0.8, 0.8],
+                zorder=1,
             )
         return (fig, ax)
 
