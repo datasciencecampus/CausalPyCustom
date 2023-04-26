@@ -66,17 +66,40 @@ class TimeSeriesExperiment(ExperimentalDesign):
     def __init__(
         self,
         data: pd.DataFrame,
-        outcome_variable_name: str,
         variable_column: str,
         treatment_time: Union[int, float, pd.Timestamp],
         formula: str,
         model=None,
         **kwargs,
     ) -> None:
+        
+        """
+        Parameters:
+
+        data: pd.DataFrame()
+        Pandas dataframm in a format with Time as the 
+        index and a column for the variable name e.g.
+        GVA, population. All of the other columns are
+        for the treatment or control areas.
+
+        variable_column: str
+        Name of the column which describes the variable
+        present in that row.
+
+        treatment_time: pd.Timestamp
+        The time at which the treatment was applied.
+
+        formula: str
+        Formula for the model of the form:
+        target_area  ~ 0 + control_area1 + control_area2 ...
+
+        model:
+        The model to use to fit the experiment.
+        """
+                
         super().__init__(model=model, **kwargs)
         self._input_validation(data, treatment_time)
         self.variable_column = variable_column
-        self.outcome_variable_name = outcome_variable_name
         self.treatment_time = treatment_time
         self.formula = formula
 
