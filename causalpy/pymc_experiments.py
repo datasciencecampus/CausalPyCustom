@@ -217,8 +217,11 @@ class TimeSeriesExperiment(ExperimentalDesign):
 
         # TOP PLOT --------------------------------------------------
         # pre-intervention period
+        
+        time_pre= self.datapre[variable].index[~self.datapre[variable].iloc[:,1].isna()]
+        
         h_line, h_patch = plot_xY(
-            self.datapre[variable].index,
+            time_pre,
             self.pre_pred[variable]["posterior_predictive"].mu,
             ax=ax[0],
             plot_hdi_kwargs={"color": "C0"},
@@ -226,8 +229,9 @@ class TimeSeriesExperiment(ExperimentalDesign):
         handles = [(h_line, h_patch)]
         labels = ["Pre-intervention period"]
 
+        
         (h,) = ax[0].plot(
-            self.datapre[variable].index,
+            time_pre,
             self.pre_y[variable],
             "k.",
             label="Observations",
@@ -268,7 +272,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
 
         # MIDDLE PLOT -----------------------------------------------
         plot_xY(
-            self.datapre[variable].index,
+            time_pre,
             self.pre_impact[variable],
             ax=ax[1],
             plot_hdi_kwargs={"color": "C0"},
