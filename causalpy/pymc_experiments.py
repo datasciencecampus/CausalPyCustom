@@ -1,9 +1,9 @@
-'''
-Significant changes have been made to this file 
+"""
+Significant changes have been made to this file
 since the CausalPyCustom repository was forked from the
 CausalPy custom repository.
 
-'''
+"""
 
 from typing import Union
 
@@ -72,12 +72,12 @@ class TimeSeriesExperiment(ExperimentalDesign):
         model=None,
         **kwargs,
     ) -> None:
-        
+
         """
         Parameters:
 
         data: pd.DataFrame()
-        Pandas dataframm in a format with Time as the 
+        Pandas dataframm in a format with Time as the
         index and a column for the variable name e.g.
         GVA, population. All of the other columns are
         for the treatment or control areas.
@@ -96,7 +96,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
         model:
         The model to use to fit the experiment.
         """
-                
+
         super().__init__(model=model, **kwargs)
         self._input_validation(data, treatment_time)
         self.variable_column = variable_column
@@ -217,9 +217,11 @@ class TimeSeriesExperiment(ExperimentalDesign):
 
         # TOP PLOT --------------------------------------------------
         # pre-intervention period
-        
-        time_pre= self.datapre[variable].index[~self.datapre[variable].iloc[:,1].isna()]
-        
+
+        time_pre = self.datapre[variable].index[
+            ~self.datapre[variable].iloc[:, 1].isna()
+        ]
+
         h_line, h_patch = plot_xY(
             time_pre,
             self.pre_pred[variable]["posterior_predictive"].mu,
@@ -229,7 +231,6 @@ class TimeSeriesExperiment(ExperimentalDesign):
         handles = [(h_line, h_patch)]
         labels = ["Pre-intervention period"]
 
-        
         (h,) = ax[0].plot(
             time_pre,
             self.pre_y[variable],
@@ -354,6 +355,83 @@ class SyntheticControl(TimeSeriesExperiment):
                 zorder=1,
             )
         return (fig, ax)
+
+    def plot2(self, variable, ax=None, unit_name: str = None, magnitude=1, target=None):
+        if not (ax):
+            _, ax = plt.subplots(figsize=(8, 3))
+            show = True
+        else:
+            show = False
+
+        time_var = [
+            *self.datapre[variable].index[~self.datapre[variable].iloc[:, 1].isna()],
+            *self.datapost[variable].index,
+        ]
+        observed = [
+            x * magnitude for x in [*self.pre_y[variable], *self.post_y[variable]]
+        ]
+        synthetic = xr.concat(
+            [
+                self.pre_pred[variable]["posterior_predictive"].mu,
+                self.post_pred[variable]["posterior_predictive"].mu,
+            ],
+            dim="obs_ind",
+        )
+        synthetic.data = synthetic.data * magnitude
+
+        if target:
+            synthetic.data = (synthetic.data - np.mean(observed)) / np.std(
+                observed
+            ) * target[1] + target[0]
+            observed = [
+                (x * magnitude - np.mean(observed)) / np.std(observed) * target[1]
+                + target[0]
+                for x in observed
+            ]
+
+        h_line, h_patch = plot_xY(
+            time_var,
+            synthetic,
+            ax=ax,
+            plot_hdi_kwargs={"color": "#ff7f0e"},
+        )
+        (h,) = ax.plot(
+            time_var,
+            observed,
+            label=unit_name if unit_name else self.unit,
+            color="#1f77b4",
+        )
+        handles = [h]
+        labels = [unit_name]
+        handles.append((h_line, h_patch))
+        labels.append("Synthetic control")
+
+        ax.vlines(
+            self.treatment_time,
+            ymin=ax.get_ylim()[0],
+            ymax=ax.get_ylim()[1],
+            linestyles=":",
+            colors="black",
+            # label="Treatment",
+        )
+        ax.text(
+            self.treatment_time,
+            ax.get_ylim()[1] * 0.95 + 0.05 * ax.get_ylim()[0],
+            " Treatment ",
+            ha="right",
+            va="top",
+        )
+        ax.set_ylabel(variable)
+        ax.set_xlabel("")
+        ax.set_title("Bayesian synthetic control with simplex constraint")
+
+        ax.legend(
+            handles=(h_tuple for h_tuple in handles), labels=labels, loc="upper left"
+        )
+        sns.despine(ax=ax)
+        if show:
+            plt.show()
+        return ax
 
 
 class DifferenceInDifferences(ExperimentalDesign):
