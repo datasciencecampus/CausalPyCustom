@@ -14,7 +14,7 @@ def plot_xY(
     Y: xr.DataArray,
     ax: plt.Axes,
     plot_hdi_kwargs: Optional[Dict[str, Any]] = None,
-    hdi_prob: float = 0.98,
+    hdi_prob: float = 0.94,
     label: Union[str, None] = None,
 ) -> Tuple[Line2D, PolyCollection]:
     """Utility function to plot HDI intervals."""

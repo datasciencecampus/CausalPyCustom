@@ -211,7 +211,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
                 "If data.index is not DatetimeIndex, treatment_time must be pd.Timestamp."  # noqa: E501
             )
 
-    def plot(self, variable):
+    def plot(self, variable, hdi_prob=0.94):
         """Plot the results"""
         fig, ax = plt.subplots(3, 1, sharex=True, figsize=(7, 8))
 
@@ -227,6 +227,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
             self.pre_pred[variable]["posterior_predictive"].mu,
             ax=ax[0],
             plot_hdi_kwargs={"color": "C0"},
+            hdi_prob=hdi_prob
         )
         handles = [(h_line, h_patch)]
         labels = ["Pre-intervention period"]
@@ -246,6 +247,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
             self.post_pred[variable]["posterior_predictive"].mu,
             ax=ax[0],
             plot_hdi_kwargs={"color": "C1"},
+            hdi_prob=hdi_prob
         )
         handles.append((h_line, h_patch))
         labels.append("Synthetic control")
@@ -277,12 +279,14 @@ class TimeSeriesExperiment(ExperimentalDesign):
             self.pre_impact[variable],
             ax=ax[1],
             plot_hdi_kwargs={"color": "C0"},
+            hdi_prob=hdi_prob
         )
         plot_xY(
             self.datapost[variable].index,
             self.post_impact[variable],
             ax=ax[1],
             plot_hdi_kwargs={"color": "C1"},
+            hdi_prob=hdi_prob
         )
         ax[1].axhline(y=0, c="k")
         ax[1].fill_between(
@@ -301,6 +305,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
             self.post_impact_cumulative[variable],
             ax=ax[2],
             plot_hdi_kwargs={"color": "C1"},
+            hdi_prob=hdi_prob
         )
         ax[2].axhline(y=0, c="k")
 
@@ -335,9 +340,9 @@ class SyntheticControl(TimeSeriesExperiment):
 
     expt_type = "Synthetic Control"
 
-    def plot(self, variable, plot_predictors=False):
+    def plot(self, variable, plot_predictors=False, hdi_prob=0.94):
         """Plot the results"""
-        fig, ax = super().plot(variable)
+        fig, ax = super().plot(variable, hdi_prob)
         if plot_predictors:
             # plot control units as well
             ax[0].plot(
@@ -356,7 +361,7 @@ class SyntheticControl(TimeSeriesExperiment):
             )
         return (fig, ax)
 
-    def plot2(self, variable, ax=None, unit_name: str = None, magnitude=1, target=None):
+    def plot2(self, variable, ax=None, hdi_prob=0.94, unit_name: str = None, magnitude=1, target=None):
         if not (ax):
             _, ax = plt.subplots(figsize=(8, 3))
             show = True
@@ -394,6 +399,7 @@ class SyntheticControl(TimeSeriesExperiment):
             synthetic,
             ax=ax,
             plot_hdi_kwargs={"color": "#ff7f0e"},
+            hdi_prob=hdi_prob
         )
         (h,) = ax.plot(
             time_var,
@@ -559,7 +565,7 @@ class DifferenceInDifferences(ExperimentalDesign):
                 coded. Consisting of 0's and 1's only."""
             )
 
-    def plot(self):
+    def plot(self, hdi_prob=0.94):
         """Plot the results.
         Creating the combined mean + HDI legend entries is a bit involved.
         """
@@ -585,6 +591,7 @@ class DifferenceInDifferences(ExperimentalDesign):
             ax=ax,
             plot_hdi_kwargs={"color": "C0"},
             label="Control group",
+            hdi_prob=hdi_prob
         )
         handles = [(h_line, h_patch)]
         labels = ["Control group"]
@@ -597,6 +604,7 @@ class DifferenceInDifferences(ExperimentalDesign):
             ax=ax,
             plot_hdi_kwargs={"color": "C1"},
             label="Treatment group",
+            hdi_prob=hdi_prob
         )
         handles.append((h_line, h_patch))
         labels.append("Treatment group")
@@ -627,6 +635,7 @@ class DifferenceInDifferences(ExperimentalDesign):
                 ax=ax,
                 plot_hdi_kwargs={"color": "C2"},
                 label="Counterfactual",
+                hdi_prob=hdi_prob
             )
             handles.append((h_line, h_patch))
             labels.append("Counterfactual")
@@ -637,7 +646,7 @@ class DifferenceInDifferences(ExperimentalDesign):
         # formatting
         ax.set(
             xticks=self.x_pred_treatment[self.time_variable_name].values,
-            title=self._causal_impact_summary_stat(),
+            title=self._causal_impact_summary_stat(hdi_prob),
         )
         ax.legend(
             handles=(h_tuple for h_tuple in handles),
@@ -684,9 +693,10 @@ class DifferenceInDifferences(ExperimentalDesign):
             va="center",
         )
 
-    def _causal_impact_summary_stat(self):
-        percentiles = self.causal_impact.quantile([0.03, 1 - 0.03]).values
-        ci = r"$CI_{94\%}$" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
+    def _causal_impact_summary_stat(self, hdi_prob=0.94):
+        lower_interval = (1 - hdi_prob) / 2
+        percentiles = self.causal_impact.quantile([lower_interval, 1 - lower_interval]).values
+        ci = f"{hdi_prob * 100}% CI" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
         causal_impact = f"{self.causal_impact.mean():.2f}, "
         return f"Causal impact = {causal_impact + ci}"
 
@@ -804,7 +814,7 @@ class RegressionDiscontinuity(ExperimentalDesign):
         """
         return np.greater_equal(x, self.treatment_threshold)
 
-    def plot(self):
+    def plot(self, hdi_prob=0.94):
         """Plot the results"""
         fig, ax = plt.subplots()
         # Plot raw data
@@ -822,6 +832,7 @@ class RegressionDiscontinuity(ExperimentalDesign):
             self.pred["posterior_predictive"].mu,
             ax=ax,
             plot_hdi_kwargs={"color": "C1"},
+            hdi_prob=hdi_prob
         )
         handles = [(h_line, h_patch)]
         labels = ["Posterior mean"]
@@ -939,7 +950,7 @@ class PrePostNEGD(ExperimentalDesign):
                 """
             )
 
-    def plot(self):
+    def plot(self, hdi_prob=0.94):
         """Plot the results"""
         fig, ax = plt.subplots(
             2, 1, figsize=(7, 9), gridspec_kw={"height_ratios": [3, 1]}
@@ -964,6 +975,7 @@ class PrePostNEGD(ExperimentalDesign):
             ax=ax[0],
             plot_hdi_kwargs={"color": "C0"},
             label="Control group",
+            hdi_prob=hdi_prob
         )
         handles = [(h_line, h_patch)]
         labels = ["Control group"]
@@ -975,6 +987,7 @@ class PrePostNEGD(ExperimentalDesign):
             ax=ax[0],
             plot_hdi_kwargs={"color": "C1"},
             label="Treatment group",
+            hdi_prob=hdi_prob
         )
         handles.append((h_line, h_patch))
         labels.append("Treatment group")
@@ -986,13 +999,14 @@ class PrePostNEGD(ExperimentalDesign):
         )
 
         # Plot estimated caual impact / treatment effect
-        az.plot_posterior(self.causal_impact, ref_val=0, ax=ax[1])
+        az.plot_posterior(self.causal_impact, ref_val=0, ax=ax[1], hdi_prob=hdi_prob)
         ax[1].set(title="Estimated treatment effect")
         return fig, ax
-
-    def _causal_impact_summary_stat(self):
-        percentiles = self.causal_impact.quantile([0.03, 1 - 0.03]).values
-        ci = r"$CI_{94\%}$" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
+    
+    def _causal_impact_summary_stat(self, hdi_prob=0.94):
+        lower_interval = (1 - hdi_prob) / 2
+        percentiles = self.causal_impact.quantile([lower_interval, 1 - lower_interval]).values
+        ci = f"{hdi_prob * 100}% CI" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
         causal_impact = f"{self.causal_impact.mean():.2f}, "
         return f"Causal impact = {causal_impact + ci}"
 
