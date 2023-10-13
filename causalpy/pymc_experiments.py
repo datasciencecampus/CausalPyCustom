@@ -70,6 +70,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
         treatment_time: Union[int, float, pd.Timestamp],
         formula: str,
         model=None,
+        unit=None,
         **kwargs,
     ) -> None:
 
@@ -362,6 +363,7 @@ class SyntheticControl(TimeSeriesExperiment):
         return (fig, ax)
 
     def plot2(self, variable, ax=None, hdi_prob=0.94, unit_name: str = None, magnitude=1, target=None):
+        """Magnitude and target are for scaling."""
         if not (ax):
             _, ax = plt.subplots(figsize=(8, 3))
             show = True
@@ -840,8 +842,9 @@ class RegressionDiscontinuity(ExperimentalDesign):
         # create strings to compose title
         title_info = f"{self.score.r2:.3f} (std = {self.score.r2_std:.3f})"
         r2 = f"Bayesian $R^2$ on all data = {title_info}"
-        percentiles = self.discontinuity_at_threshold.quantile([0.03, 1 - 0.03]).values
-        ci = r"$CI_{94\%}$" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
+        lower_interval = (1 - hdi_prob) / 2
+        percentiles = self.discontinuity_at_threshold.quantile([lower_interval, 1 - lower_interval]).values
+        ci = f"{hdi_prob * 100}% CI" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
         discon = f"""
             Discontinuity at threshold = {self.discontinuity_at_threshold.mean():.2f},
             """
