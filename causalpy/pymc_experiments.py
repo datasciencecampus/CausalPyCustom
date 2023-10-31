@@ -365,6 +365,8 @@ class SyntheticControl(TimeSeriesExperiment):
 
     def plot2(self, variable, ax=None, hdi_prob=0.94, unit_name: str = None, magnitude=1, target=None):
         """Magnitude and target are for scaling."""
+        unit_name_value = unit_name if unit_name else self.unit
+
         if not (ax):
             _, ax = plt.subplots(figsize=(8, 3))
             show = True
@@ -407,11 +409,11 @@ class SyntheticControl(TimeSeriesExperiment):
         (h,) = ax.plot(
             time_var,
             observed,
-            label=unit_name if unit_name else self.unit,
+            label=unit_name_value,
             color="#1f77b4",
         )
         handles = [h]
-        labels = [unit_name]
+        labels = [unit_name_value]
         handles.append((h_line, h_patch))
         labels.append("Synthetic control")
 
