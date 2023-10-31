@@ -103,6 +103,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
         self.variable_column = variable_column
         self.treatment_time = treatment_time
         self.formula = formula
+        self.unit = unit
 
         self.datapre = {}
         self.datapost = {}
