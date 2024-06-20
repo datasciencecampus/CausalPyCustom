@@ -1,9 +1,9 @@
-'''
-Significant changes have been made to this file 
+"""
+Significant changes have been made to this file
 since the CausalPyCustom repository was forked from the
 CausalPy custom repository.
 
-'''
+"""
 
 from typing import Union
 
@@ -70,14 +70,15 @@ class TimeSeriesExperiment(ExperimentalDesign):
         treatment_time: Union[int, float, pd.Timestamp],
         formula: str,
         model=None,
+        unit=None,
         **kwargs,
     ) -> None:
-        
+
         """
         Parameters:
 
         data: pd.DataFrame()
-        Pandas dataframm in a format with Time as the 
+        Pandas dataframm in a format with Time as the
         index and a column for the variable name e.g.
         GVA, population. All of the other columns are
         for the treatment or control areas.
@@ -96,12 +97,13 @@ class TimeSeriesExperiment(ExperimentalDesign):
         model:
         The model to use to fit the experiment.
         """
-                
+
         super().__init__(model=model, **kwargs)
         self._input_validation(data, treatment_time)
         self.variable_column = variable_column
         self.treatment_time = treatment_time
         self.formula = formula
+        self.unit = unit
 
         self.datapre = {}
         self.datapost = {}
@@ -211,23 +213,29 @@ class TimeSeriesExperiment(ExperimentalDesign):
                 "If data.index is not DatetimeIndex, treatment_time must be pd.Timestamp."  # noqa: E501
             )
 
-    def plot(self, variable):
+    def plot(self, variable, hdi_prob=0.94):
         """Plot the results"""
         fig, ax = plt.subplots(3, 1, sharex=True, figsize=(7, 8))
 
         # TOP PLOT --------------------------------------------------
         # pre-intervention period
+
+        time_pre = self.datapre[variable].index[
+            ~self.datapre[variable].iloc[:, 1].isna()
+        ]
+
         h_line, h_patch = plot_xY(
-            self.datapre[variable].index,
+            time_pre,
             self.pre_pred[variable]["posterior_predictive"].mu,
             ax=ax[0],
             plot_hdi_kwargs={"color": "C0"},
+            hdi_prob=hdi_prob
         )
         handles = [(h_line, h_patch)]
         labels = ["Pre-intervention period"]
 
         (h,) = ax[0].plot(
-            self.datapre[variable].index,
+            time_pre,
             self.pre_y[variable],
             "k.",
             label="Observations",
@@ -241,6 +249,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
             self.post_pred[variable]["posterior_predictive"].mu,
             ax=ax[0],
             plot_hdi_kwargs={"color": "C1"},
+            hdi_prob=hdi_prob
         )
         handles.append((h_line, h_patch))
         labels.append("Synthetic control")
@@ -268,16 +277,18 @@ class TimeSeriesExperiment(ExperimentalDesign):
 
         # MIDDLE PLOT -----------------------------------------------
         plot_xY(
-            self.datapre[variable].index,
+            time_pre,
             self.pre_impact[variable],
             ax=ax[1],
             plot_hdi_kwargs={"color": "C0"},
+            hdi_prob=hdi_prob
         )
         plot_xY(
             self.datapost[variable].index,
             self.post_impact[variable],
             ax=ax[1],
             plot_hdi_kwargs={"color": "C1"},
+            hdi_prob=hdi_prob
         )
         ax[1].axhline(y=0, c="k")
         ax[1].fill_between(
@@ -296,6 +307,7 @@ class TimeSeriesExperiment(ExperimentalDesign):
             self.post_impact_cumulative[variable],
             ax=ax[2],
             plot_hdi_kwargs={"color": "C1"},
+            hdi_prob=hdi_prob
         )
         ax[2].axhline(y=0, c="k")
 
@@ -330,9 +342,9 @@ class SyntheticControl(TimeSeriesExperiment):
 
     expt_type = "Synthetic Control"
 
-    def plot(self, variable, plot_predictors=False):
+    def plot(self, variable, plot_predictors=False, hdi_prob=0.94):
         """Plot the results"""
-        fig, ax = super().plot(variable)
+        fig, ax = super().plot(variable, hdi_prob)
         if plot_predictors:
             # plot control units as well
             ax[0].plot(
@@ -350,6 +362,87 @@ class SyntheticControl(TimeSeriesExperiment):
                 zorder=1,
             )
         return (fig, ax)
+
+    def plot2(self, variable, ax=None, hdi_prob=0.94, unit_name: str = None, magnitude=1, target=None):
+        """Magnitude and target are for scaling."""
+        unit_name_value = unit_name if unit_name else self.unit
+
+        if not (ax):
+            _, ax = plt.subplots(figsize=(8, 3))
+            show = True
+        else:
+            show = False
+
+        time_var = [
+            *self.datapre[variable].index[~self.datapre[variable].iloc[:, 1].isna()],
+            *self.datapost[variable].index,
+        ]
+        observed = [
+            x * magnitude for x in [*self.pre_y[variable], *self.post_y[variable]]
+        ]
+        synthetic = xr.concat(
+            [
+                self.pre_pred[variable]["posterior_predictive"].mu,
+                self.post_pred[variable]["posterior_predictive"].mu,
+            ],
+            dim="obs_ind",
+        )
+        synthetic.data = synthetic.data * magnitude
+
+        if target:
+            synthetic.data = (synthetic.data - np.mean(observed)) / np.std(
+                observed
+            ) * target[1] + target[0]
+            observed = [
+                (x * magnitude - np.mean(observed)) / np.std(observed) * target[1]
+                + target[0]
+                for x in observed
+            ]
+
+        h_line, h_patch = plot_xY(
+            time_var,
+            synthetic,
+            ax=ax,
+            plot_hdi_kwargs={"color": "#ff7f0e"},
+            hdi_prob=hdi_prob
+        )
+        (h,) = ax.plot(
+            time_var,
+            observed,
+            label=unit_name_value,
+            color="#1f77b4",
+        )
+        handles = [h]
+        labels = [unit_name_value]
+        handles.append((h_line, h_patch))
+        labels.append("Synthetic control")
+
+        ax.vlines(
+            self.treatment_time,
+            ymin=ax.get_ylim()[0],
+            ymax=ax.get_ylim()[1],
+            linestyles=":",
+            colors="black",
+            # label="Treatment",
+        )
+        ax.text(
+            self.treatment_time,
+            ax.get_ylim()[1] * 0.95 + 0.05 * ax.get_ylim()[0],
+            " Treatment ",
+            ha="right",
+            va="top",
+        )
+        ax.set_ylabel(variable)
+        ax.set_xlabel("")
+        ax.set_title("Bayesian synthetic control with simplex constraint")
+
+        ax.legend(
+            handles=(h_tuple for h_tuple in handles), labels=labels, loc="upper left"
+        )
+        sns.despine(ax=ax)
+        if show:
+            plt.show()
+        return ax
 
 
 class DifferenceInDifferences(ExperimentalDesign):
@@ -477,7 +570,7 @@ class DifferenceInDifferences(ExperimentalDesign):
                 coded. Consisting of 0's and 1's only."""
             )
 
-    def plot(self):
+    def plot(self, hdi_prob=0.94):
         """Plot the results.
         Creating the combined mean + HDI legend entries is a bit involved.
         """
@@ -503,6 +596,7 @@ class DifferenceInDifferences(ExperimentalDesign):
             ax=ax,
             plot_hdi_kwargs={"color": "C0"},
             label="Control group",
+            hdi_prob=hdi_prob
         )
         handles = [(h_line, h_patch)]
         labels = ["Control group"]
@@ -515,6 +609,7 @@ class DifferenceInDifferences(ExperimentalDesign):
             ax=ax,
             plot_hdi_kwargs={"color": "C1"},
             label="Treatment group",
+            hdi_prob=hdi_prob
         )
         handles.append((h_line, h_patch))
         labels.append("Treatment group")
@@ -545,6 +640,7 @@ class DifferenceInDifferences(ExperimentalDesign):
                 ax=ax,
                 plot_hdi_kwargs={"color": "C2"},
                 label="Counterfactual",
+                hdi_prob=hdi_prob
             )
             handles.append((h_line, h_patch))
             labels.append("Counterfactual")
@@ -555,7 +651,7 @@ class DifferenceInDifferences(ExperimentalDesign):
         # formatting
         ax.set(
             xticks=self.x_pred_treatment[self.time_variable_name].values,
-            title=self._causal_impact_summary_stat(),
+            title=self._causal_impact_summary_stat(hdi_prob),
         )
         ax.legend(
             handles=(h_tuple for h_tuple in handles),
@@ -602,9 +698,10 @@ class DifferenceInDifferences(ExperimentalDesign):
             va="center",
         )
 
-    def _causal_impact_summary_stat(self):
-        percentiles = self.causal_impact.quantile([0.03, 1 - 0.03]).values
-        ci = r"$CI_{94\%}$" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
+    def _causal_impact_summary_stat(self, hdi_prob=0.94):
+        lower_interval = (1 - hdi_prob) / 2
+        percentiles = self.causal_impact.quantile([lower_interval, 1 - lower_interval]).values
+        ci = f"{hdi_prob * 100}% CI" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
         causal_impact = f"{self.causal_impact.mean():.2f}, "
         return f"Causal impact = {causal_impact + ci}"
 
@@ -722,7 +819,7 @@ class RegressionDiscontinuity(ExperimentalDesign):
         """
         return np.greater_equal(x, self.treatment_threshold)
 
-    def plot(self):
+    def plot(self, hdi_prob=0.94):
         """Plot the results"""
         fig, ax = plt.subplots()
         # Plot raw data
@@ -740,6 +837,7 @@ class RegressionDiscontinuity(ExperimentalDesign):
             self.pred["posterior_predictive"].mu,
             ax=ax,
             plot_hdi_kwargs={"color": "C1"},
+            hdi_prob=hdi_prob
         )
         handles = [(h_line, h_patch)]
         labels = ["Posterior mean"]
@@ -747,8 +845,9 @@ class RegressionDiscontinuity(ExperimentalDesign):
         # create strings to compose title
         title_info = f"{self.score.r2:.3f} (std = {self.score.r2_std:.3f})"
         r2 = f"Bayesian $R^2$ on all data = {title_info}"
-        percentiles = self.discontinuity_at_threshold.quantile([0.03, 1 - 0.03]).values
-        ci = r"$CI_{94\%}$" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
+        lower_interval = (1 - hdi_prob) / 2
+        percentiles = self.discontinuity_at_threshold.quantile([lower_interval, 1 - lower_interval]).values
+        ci = f"{hdi_prob * 100}% CI" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
         discon = f"""
             Discontinuity at threshold = {self.discontinuity_at_threshold.mean():.2f},
             """
@@ -857,7 +956,7 @@ class PrePostNEGD(ExperimentalDesign):
                 """
             )
 
-    def plot(self):
+    def plot(self, hdi_prob=0.94):
         """Plot the results"""
         fig, ax = plt.subplots(
             2, 1, figsize=(7, 9), gridspec_kw={"height_ratios": [3, 1]}
@@ -882,6 +981,7 @@ class PrePostNEGD(ExperimentalDesign):
             ax=ax[0],
             plot_hdi_kwargs={"color": "C0"},
             label="Control group",
+            hdi_prob=hdi_prob
         )
         handles = [(h_line, h_patch)]
         labels = ["Control group"]
@@ -893,6 +993,7 @@ class PrePostNEGD(ExperimentalDesign):
             ax=ax[0],
             plot_hdi_kwargs={"color": "C1"},
             label="Treatment group",
+            hdi_prob=hdi_prob
         )
         handles.append((h_line, h_patch))
         labels.append("Treatment group")
@@ -904,13 +1005,14 @@ class PrePostNEGD(ExperimentalDesign):
         )
 
         # Plot estimated caual impact / treatment effect
-        az.plot_posterior(self.causal_impact, ref_val=0, ax=ax[1])
+        az.plot_posterior(self.causal_impact, ref_val=0, ax=ax[1], hdi_prob=hdi_prob)
         ax[1].set(title="Estimated treatment effect")
         return fig, ax
-
-    def _causal_impact_summary_stat(self):
-        percentiles = self.causal_impact.quantile([0.03, 1 - 0.03]).values
-        ci = r"$CI_{94\%}$" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
+    
+    def _causal_impact_summary_stat(self, hdi_prob=0.94):
+        lower_interval = (1 - hdi_prob) / 2
+        percentiles = self.causal_impact.quantile([lower_interval, 1 - lower_interval]).values
+        ci = f"{hdi_prob * 100}% CI" + f"[{percentiles[0]:.2f}, {percentiles[1]:.2f}]"
         causal_impact = f"{self.causal_impact.mean():.2f}, "
         return f"Causal impact = {causal_impact + ci}"
 

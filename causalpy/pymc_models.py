@@ -12,10 +12,12 @@ class ModelBuilder(pm.Model):
     This is a wrapper around pm.Model to give scikit-learn like API
     """
 
-    def __init__(self, sample_kwargs: Optional[Dict[str, Any]] = None):
+    def __init__(self, sample_kwargs: Optional[Dict[str, Any]] = None, beta_a = None, beta_std = None):
         super().__init__()
         self.idata = None
         self.sample_kwargs = sample_kwargs if sample_kwargs is not None else {}
+        self.beta_a = beta_a if beta_a is not None else 1
+        self.beta_std = beta_std if beta_std is not None else 50
 
     def build_model(self, X, y, coords) -> None:
         """Build the model.
@@ -90,7 +92,7 @@ class WeightedSumFitter(ModelBuilder):
             X = pm.MutableData("X", X, dims=["obs_ind", "coeffs"])
             y = pm.MutableData("y", y[:, 0], dims="obs_ind")
             # TODO: There we should allow user-specified priors here
-            beta = pm.Dirichlet("beta", a=np.ones(n_predictors), dims="coeffs")
+            beta = pm.Dirichlet("beta", a=self.beta_a * np.ones(n_predictors), dims="coeffs")
             # beta = pm.Dirichlet(
             #     name="beta", a=(1 / n_predictors) * np.ones(n_predictors),
             #     dims="coeffs"
@@ -109,7 +111,7 @@ class LinearRegression(ModelBuilder):
             self.add_coords(coords)
             X = pm.MutableData("X", X, dims=["obs_ind", "coeffs"])
             y = pm.MutableData("y", y[:, 0], dims="obs_ind")
-            beta = pm.Normal("beta", 0, 50, dims="coeffs")
+            beta = pm.Normal("beta", 0, self.beta_std, dims="coeffs")
             sigma = pm.HalfNormal("sigma", 1)
             mu = pm.Deterministic("mu", pm.math.dot(X, beta), dims="obs_ind")
             pm.Normal("y_hat", mu, sigma, observed=y, dims="obs_ind")

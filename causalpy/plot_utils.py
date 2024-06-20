@@ -34,7 +34,7 @@ def plot_xY(
         Y,
         hdi_prob=hdi_prob,
         fill_kwargs={
-            "alpha": 0.25,
+            "alpha": 0.20,
             "label": " ",
         },
         smooth=False,
